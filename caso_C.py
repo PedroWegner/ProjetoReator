@@ -32,7 +32,7 @@ def edo_system(W, F, T, P, R: float = 8.314):
 
 def FO(W, args):
     W_span = [0.0, W[0]]
-    params, F_0, F_ETAL_spec = args
+    params, F_0, X_E_specificada = args
     sol = solve_ivp(fun=edo_system,
                 t_span=W_span,
                 y0=F_0,
@@ -40,8 +40,9 @@ def FO(W, args):
                 dense_output=True,
                 rtol=1e-8,
                 atol=1e-10)
-    F_ETAL_calc = sol.y[3][-1]
-    return (F_ETAL_calc - F_ETAL_spec)**2
+    F_E_final = sol.y[0][-1]
+    X_E_calc = (F_0[0] - F_E_final) / F_0[0]
+    return (X_E_calc - X_E_specificada)**2
 
 
 if __name__ == '__main__':
@@ -51,18 +52,18 @@ if __name__ == '__main__':
     FE_0 = 227
     F_0 = np.array([FE_0, FO_0, FN_0, 0.0, 0.0, 0.0])
     T = 513
-    P = 101325 * 3.6
+    P = 101325 * 4.6
     params = (T, P,)
 
 
     # Variaveis para otimizacao
-    F_ETAL_spec = 208.84
-    args = (params, F_0, F_ETAL_spec,)
+    X_E_spec = 0.79
+    args = (params, F_0, X_E_spec,)
 
-    W_minimization = minimize(fun=FO, x0=[500], args=(args,), method='NELDER-MEAD')
+    W_minimization = minimize(fun=FO, x0=[700], args=(args,), method='NELDER-MEAD')
     W_optmized = W_minimization.x[0]
     W_span = np.array([0.0, W_optmized])
-    
+    print(W_optmized)
     sol = solve_ivp(fun=edo_system,
                     t_span=W_span,
                     y0=F_0,
@@ -74,16 +75,19 @@ if __name__ == '__main__':
     # Plotagem do grafico
     W_plot = np.linspace(0.0, W_optmized, 1500)
     F_plot = sol.sol(W_plot)
-    F_E_plot, F_O_plot, _, F_ETAL_plot, F_W_plot, F_DC_plot = F_plot
-
-    plt.plot(W_plot, F_E_plot, label=r'$F_{E}$')
-    plt.plot(W_plot, F_O_plot, label=r'$F_{O}$')
-    plt.plot(W_plot, F_ETAL_plot, linestyle='dashed', label=r'$F_{ETAL}$')
-    plt.plot(W_plot, F_W_plot, linestyle='dotted', label=r'$F_{W}$')
-    plt.plot(W_plot, F_DC_plot, linestyle='dotted', label=r'$F_{DC}$')
+    F_E_plot, F_O_plot, F_N_plot, F_ETAL_plot, F_W_plot, F_DC_plot = F_plot
+    F_t_plot = np.sum(F_plot[:-1], axis=0)
+    y_E_plot, y_O_plot, y_N_plot, y_ETAL_plot, y_W_plot, y_DC_plot = F_plot / F_t_plot
+    print(F_plot[:,-1])
+    plt.plot(W_plot, y_E_plot, label=r'$y_{E}$')
+    plt.plot(W_plot, y_O_plot, label=r'$y_{O}$')
+    plt.plot(W_plot, y_ETAL_plot, label=r'$y_{ETAL}$')
+    plt.plot(W_plot, y_W_plot, label=r'$y_{W}$')
+    plt.plot(W_plot, y_DC_plot, label=r'$y_{DC}$')
+    plt.plot(W_plot, y_N_plot, label=r'$y_{N}$')
     plt.xlabel(r'$W_{cat}\;[kg]$')
     plt.xlim(left=0.0, right=W_optmized)
     plt.ylim(bottom=0.0)
-    plt.ylabel(r'$F_{i}\;[kmol\;h^{-1}]$')
+    plt.ylabel(r'$y_{i}$') #\;[kmol\;h^{-1}]
     plt.legend()
     plt.show()

@@ -3,6 +3,7 @@ from scipy.integrate import solve_ivp
 from peng_robinson_eos import *
 from scipy.optimize import minimize
 import matplotlib.pyplot as plt
+from copy import deepcopy
 
 def viscosity_pures(T, C):
     C = np.asarray(C)
@@ -83,7 +84,7 @@ def edo_system(W: float,
                rho_cat: float,
                dp: float, 
                epislon: float, 
-               C: np.ndarray, 
+               C: np.ndarray,
                D_col: float,
                R: float = 8.314):
     # desempacota as variaveis
@@ -114,14 +115,12 @@ def edo_system(W: float,
     return np.array(EDO)
 
 
-def FO(vars, args):
-    W, D_col = vars
-    W_span = [0.0, W]
-    params, F_ETAL_spec, deltaP_spec = args
-    params += (D_col, )
+def FO(W, args):
+    W_span = [0.0, W[0]]
+    params, X_E_spec = args
     P_0 = params[1]
     F_0 = params[3]
-    y0 = np.append(F_0, P_0)
+    y0 = np.append(F_0, P_0) # aqui tem que entrar com a pressao e vazao inicial
     sol = solve_ivp(fun=edo_system,
                 t_span=W_span,
                 y0=y0,
@@ -129,16 +128,38 @@ def FO(vars, args):
                 dense_output=True,
                 rtol=1e-8,
                 atol=1e-10)
-    F_ETAL_calc = sol.y[3][-1]
-    P_f = sol.y[-1][-1]
+    F_E_final = sol.y[0][-1]
+    X_E_calc = (F_0[0] - F_E_final) / F_0[0]
+    return 10**4 * (X_E_calc - X_E_spec)**2
+
+def varies_diameters(D, params_ref):
+    params = deepcopy(params_ref)
+    params += (D, )
+    # (T, P_0, M_i, F_0, m_dot, rho_0, rho_cat, dp, epsilon, C, D)
+    X_E_spec = 0.79
+    args = (params, X_E_spec)
+    W_min = minimize(fun=FO, x0=[850], args=(args,), method='NELDER-MEAD')
+
+    # Para pegar a pressao
+    W_optmized = W_min.x[0]
+    W_span = np.array([0.0, W_optmized])
     P_0 = params[1]
-    deltaP_calc = P_0 - P_f
-    FO_1 = (F_ETAL_calc - F_ETAL_spec)**2
-    FO_2 = 10**2 * (deltaP_calc - deltaP_spec)**2
+    F_0 = params[3]
+    y0 = np.append(F_0, P_0)
+    sol = solve_ivp(fun=edo_system,
+                    t_span=W_span,
+                    y0=y0,
+                    args=params,
+                    dense_output=True,
+                    rtol=1e-8,
+                    atol=1e-10)
 
-    return FO_1 + FO_2
-
-
+    W_plot = np.linspace(0.0, W_optmized, 150)
+    P_plot = sol.sol(W_plot)
+    _, _, _, _, _, _, P = P_plot
+    delta_P = P_0 - P[-1]
+    print(W_optmized, delta_P, D)
+    return W_optmized, delta_P / 101325
 
 if __name__ == '__main__':
     # Instanciando uma engine de Peng-Robinson
@@ -175,7 +196,7 @@ if __name__ == '__main__':
     
     # Parametros da alimentacao
     T = 513 # K
-    P_0 = 101325 * 3.6 # Pa
+    P_0 = 101325 * 4.6 # Pa
     Far_0 = 1081 # kmol h-1
     FO_0 = 0.21 * Far_0 # kmol h-1
     FN_0 = 0.79 * Far_0 # kmol h-1
@@ -198,44 +219,11 @@ if __name__ == '__main__':
     rho_buld = 1120 # kg m-3
     D_col = 0.848274624 # m
 
-    params = (T, P_0, M_i, F_0, m_dot, rho_0, rho_cat, dp, epsilon, C)
-
-    W = 1434.508292
-    W_span = [0.0, W]
-    vars_0 = np.append(F_0, P_0)
+    # Parametros basicos
+    params = (T, P_0, M_i, F_0, m_dot, rho_0, rho_cat, dp, epsilon, C) # talvez tenha que incluir o estado aqui
     
-    F_ETAL_spec = 208.84
-    deltaP_spec = 0.1 * P_0
-    args = (params, F_ETAL_spec, deltaP_spec,)
-    W_minimization = minimize(fun=FO, x0=[1000.0, 1.0], args=(args,), method='NELDER-MEAD', options={'maxiter': 1000})
-    print(W_minimization)
-    W_optmized = W_minimization.x[0]
-    W_span = np.array([0.0, W_optmized])  
-    params += (W_minimization.x[1], )
-    print(params)
-    y0 = np.append(F_0, P_0)
-    sol = solve_ivp(fun=edo_system,
-                    t_span=W_span,
-                    y0=y0,
-                    args=params,
-                    dense_output=True,
-                    rtol=1e-8,
-                    atol=1e-10)
+    X_E_spec = 0.79
 
-    W_plot = np.linspace(0.0, W_optmized, 15)
-    F_plot = sol.sol(W_plot)
-    F_t_plot = np.sum(F_plot[:-1], axis=0)
-    print(F_t_plot)
-    F_E_plot, F_O_plot, _, F_ETAL_plot, F_W_plot, F_DC_plot, _= F_plot
 
-    plt.plot(W_plot, F_E_plot, label=r'$F_{E}$')
-    plt.plot(W_plot, F_O_plot, label=r'$F_{O}$')
-    plt.plot(W_plot, F_ETAL_plot, linestyle='dashed', label=r'$F_{ETAL}$')
-    plt.plot(W_plot, F_W_plot, linestyle='dotted', label=r'$F_{W}$')
-    plt.plot(W_plot, F_DC_plot, linestyle='dotted', label=r'$F_{DC}$')
-    plt.xlabel(r'$W_{cat}\;[kg]$')
-    plt.xlim(left=0.0, right=W_optmized)
-    plt.ylim(bottom=0.0)
-    plt.ylabel(r'$F_{i}\;[kmol\;h^{-1}]$')
-    plt.legend()
-    # plt.show()
+
+    
